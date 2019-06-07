@@ -52,22 +52,29 @@ def random_crop(imgs, width, height):
         maxy = int(random.random() * sizeY) - (height + 1)
         if maxy < 0:
             maxy = 1
-        #plt.imshow(img.crop((maxx, maxy, maxx + width, maxy + height)),cmap='gray')
-        #plt.show()
         sets.append(img.crop((maxx, maxy, maxx + width, maxy + height)))
     return sets
 
 def create_sets(imgs):
+
     raw = []
     low = []
     width, height = imgs[0].size
+
     for img in imgs:
-        raw.append(np.array(img).reshape(width,height,1))
-        low_res = np.array(img.resize((int(width/2),int(height/2))).resize((width,height))).reshape(width,height,1)
+        
+        raw_res = np.array(img).reshape(width,height,1)/255
+        low_res = np.array(img.resize((int(width/2),int(height/2))).resize((width,height))).reshape(width,height,1)/255
+
+        raw.append(raw_res)
         low.append(low_res)
+
     return low, raw
 
+
 def do_CNN(batch_size, stddev, sets, ratio, width, height): 
+
+    tf.logging.set_verbosity(tf.logging.ERROR)
 
     x = tf.placeholder(tf.float32, shape=[None, 32,32,1])
     y = tf.placeholder(tf.float32, shape=[None, 32,32,1])
@@ -84,9 +91,9 @@ def do_CNN(batch_size, stddev, sets, ratio, width, height):
     Layer2 = tf.nn.relu(tf.nn.conv2d(Layer1, W2, strides=[1,1,1,1], padding='SAME') + b2)
     hypothesis = tf.nn.conv2d(Layer2, W3, strides=[1,1,1,1], padding='SAME') + b3
 
-    loss = tf.reduce_mean(tf.squared_difference(y,hypothesis)/1024)
+    loss = tf.reduce_mean(tf.squared_difference(y,hypothesis))
     train = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
-    psnr = tf.reduce_mean(tf.image.psnr(y, hypothesis, max_val=255))
+    psnr = tf.reduce_mean(tf.image.psnr(y, hypothesis, max_val=1.0))
     
     tf.summary.image("image_hypo", hypothesis, max_outputs=5)
     tf.summary.image("image_y", y, max_outputs=5)
@@ -116,4 +123,4 @@ def do_CNN(batch_size, stddev, sets, ratio, width, height):
 
             sess.run(train, feed_dict={x: train_x, y: train_y})    
 
-do_CNN(batch_size, stddev, load_images(['91/', '291/']), ratio, width, height)
+do_CNN(batch_size, stddev, load_images(['291/']), ratio, width, height)

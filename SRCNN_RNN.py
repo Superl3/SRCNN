@@ -1,7 +1,5 @@
 import tensorflow as tf
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.image as MPimg
 import random
 from PIL import Image
 import os
@@ -19,7 +17,8 @@ def load_images(paths):
     imgs = []
     for path in paths:
         for filename in os.listdir(path):
-            imgs.append(Image.open(os.path.join(path, filename)).convert('L'))
+            img = Image.open(os.path.join(path, filename)).convert('L')
+            imgs.append(img)
     return imgs
 
 def div_sets(batch_size, ratio, imgs):
@@ -53,8 +52,6 @@ def random_crop(imgs, width, height):
         maxy = int(random.random() * sizeY) - (height + 1)
         if maxy < 0:
             maxy = 1
-        #plt.imshow(img.crop((maxx, maxy, maxx + width, maxy + height)),cmap='gray')
-        #plt.show()
         sets.append(img.crop((maxx, maxy, maxx + width, maxy + height)))
     return sets
 
@@ -63,8 +60,10 @@ def create_sets(imgs):
     low = []
     width, height = imgs[0].size
     for img in imgs:
-        raw.append(np.array(img).reshape(width,height,1))
-        low_res = np.array(img.resize((int(width/2),int(height/2))).resize((width,height))).reshape(width,height,1)
+        raw_res = np.array(img).reshape(width,height,1)/255
+        low_res = np.array(img.resize((int(width/2),int(height/2))).resize((width,height))).reshape(width,height,1)/255
+
+        raw.append(raw_res)
         low.append(low_res)
     return low, raw
 
@@ -82,48 +81,58 @@ def CNN(input_size, x, stddev):
     h0 = tf.zeros([input_size, 32, 32, 32])
 
     z0 = tf.concat([x,x], axis=3)
-    h1 = tf.nn.relu(tf.nn.conv2d(h0, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z0, Wzh, strides=[1,1,1,1], padding='SAME'))
+    h1 = tf.nn.relu(tf.nn.conv2d(h0, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z0, Wzh, strides=[1,1,1,1], padding='SAME') + bh)
     y1 = tf.nn.relu(tf.nn.conv2d(h1, Why, strides=[1,1,1,1], padding='SAME') + by)
 
     z1 = tf.concat([x,y1], axis=3)
-    h2 = tf.nn.relu(tf.nn.conv2d(h1, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z1, Wzh, strides=[1,1,1,1], padding='SAME'))
+    h2 = tf.nn.relu(tf.nn.conv2d(h1, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z1, Wzh, strides=[1,1,1,1], padding='SAME') + bh)
     y2 = tf.nn.relu(tf.nn.conv2d(h2, Why, strides=[1,1,1,1], padding='SAME') + by)
 
     z2 = tf.concat([x,y2], axis=3)
-    h3 = tf.nn.relu(tf.nn.conv2d(h2, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z2, Wzh, strides=[1,1,1,1], padding='SAME'))
+    h3 = tf.nn.relu(tf.nn.conv2d(h2, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z2, Wzh, strides=[1,1,1,1], padding='SAME') + bh)
     y3 = tf.nn.relu(tf.nn.conv2d(h3, Why, strides=[1,1,1,1], padding='SAME') + by)
 
-    return y1, y2, y3
+    saver = tf.train.Saver([Wzh,Whh,bh,Why,by])
+
+    return y1, y2, y3, saver
 
 def do_CNN(batch_size, stddev, sets, ratio, width, height): 
+
+    tf.logging.set_verbosity(tf.logging.ERROR)
+    
     x = tf.placeholder(tf.float32, shape=[None, 32,32,1])
     y = tf.placeholder(tf.float32, shape=[None, 32,32,1])
     input_size = tf.placeholder(tf.float32)
     
-    y1, y2, y3 = CNN(input_size, x, 5e-2)
+    y1, y2, y3, saver = CNN(input_size, x, 5e-2)
     loss = tf.reduce_mean(tf.squared_difference(y, y1) + tf.squared_difference(y, y2) + tf.squared_difference(y, y3))
     train = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
     
-    psnr = tf.reduce_mean(tf.image.psnr(y, y3, max_val=255.0))
+    psnr = tf.reduce_mean(tf.image.psnr(y, y3, max_val=1.0))
+
+    tf.summary.image("image_hypo", y3, max_outputs=5)
+    tf.summary.image("image_y", y, max_outputs=5)
+    tf.summary.scalar("loss", loss)
+    tf.summary.scalar("psnr", psnr)
 
     global_step = 0
     with tf.Session() as sess:
- #       merge = tf.summary.merge_all()
- #       writer = tf.summary.FileWriter("./logs/", sess.graph)
+        merge = tf.summary.merge_all()
+        writer = tf.summary.FileWriter("./logs/", sess.graph)
         sess.run(tf.global_variables_initializer())
 
         for i in range(epoch):
             train_raw, test_raw = div_sets(batch_size, ratio, sets)
             train_x, train_y = create_sets(random_crop(train_raw, width, height))
-   
-            if i%10 == 0:
+
+            if i%100 == 0:
                 test_x, test_y = create_sets(random_crop(test_raw, width, height))
-                psnr_, loss_ = sess.run([psnr, loss], feed_dict={x: test_x, y: test_y, input_size: len(test_x)})
+                psnr_, loss_, summary = sess.run([psnr, loss, merge], feed_dict={x: test_x, y: test_y, input_size: len(test_x)})
                 print("Epoch : %4d, psnr : %.4fdB, loss : %.4f" %(i, psnr_, loss_))
-  #              writer.add_summary(summary, global_step)
+                writer.add_summary(summary, global_step)
                 global_step+=1
-  #              saver.save(sess, 'SRCNNParams')
+                saver.save(sess, 'RNNParams')
 
             sess.run(train, feed_dict={x: train_x, y: train_y, input_size: len(train_x)})
 
-do_CNN(batch_size, stddev, load_images(['91/']), ratio, width, height)
+do_CNN(batch_size, stddev, load_images(['291/']), ratio, width, height)
