@@ -6,12 +6,13 @@ import os
 
 width = 32
 height = 32
-learning_rate = 1e-3
+
 batch_size = 128
-epoch = 10000
+epoch = 5000
+
+learning_rate = 1e-4
 stddev = 5e-2
 ratio = 0.7
-size = 91
 
 def load_images(paths):
     imgs = []
@@ -90,7 +91,7 @@ def CNN(input_size, x, stddev):
 
     z2 = tf.concat([x,y2], axis=3)
     h3 = tf.nn.relu(tf.nn.conv2d(h2, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z2, Wzh, strides=[1,1,1,1], padding='SAME') + bh)
-    y3 = tf.nn.relu(tf.nn.conv2d(h3, Why, strides=[1,1,1,1], padding='SAME') + by)
+    y3 = tf.clip_by_value(tf.nn.relu(tf.nn.conv2d(h3, Why, strides=[1,1,1,1], padding='SAME') + by),0,1)
 
     saver = tf.train.Saver([Wzh,Whh,bh,Why,by])
 

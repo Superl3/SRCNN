@@ -1,14 +1,12 @@
 ﻿import tensorflow as tf
 import numpy as np
 import random
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
 from PIL import Image
 import os
 
 width = 32
 height = 32
-learning_rate = 1e-3
+learning_rate = 1e-4
 batch_size = 128
 epoch = 10000
 stddev = 5e-2
@@ -89,7 +87,8 @@ def do_CNN(batch_size, stddev, sets, ratio, width, height):
     
     Layer1 = tf.nn.relu(tf.nn.conv2d(x, W1, strides=[1,1,1,1], padding='SAME') + b1)    
     Layer2 = tf.nn.relu(tf.nn.conv2d(Layer1, W2, strides=[1,1,1,1], padding='SAME') + b2)
-    hypothesis = tf.nn.conv2d(Layer2, W3, strides=[1,1,1,1], padding='SAME') + b3
+    hypothesis = tf.clip_by_value(tf.nn.conv2d(Layer2, W3, strides=[1,1,1,1], padding='SAME') + b3, 0, 1)
+    
 
     loss = tf.reduce_mean(tf.squared_difference(y,hypothesis))
     train = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)

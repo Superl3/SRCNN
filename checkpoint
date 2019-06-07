@@ -1,2 +1,2 @@
-model_checkpoint_path: "RNNParams"
-all_model_checkpoint_paths: "RNNParams"
+model_checkpoint_path: "SRCNNParams"
+all_model_checkpoint_paths: "SRCNNParams"
