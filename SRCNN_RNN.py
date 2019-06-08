@@ -10,8 +10,8 @@ height = 32
 batch_size = 128
 epoch = 5000
 
-learning_rate = 1e-4
-stddev = 5e-2
+learning_rate = 3e-5
+stddev = 1e-1
 ratio = 0.7
 
 def load_images(paths):
@@ -61,8 +61,8 @@ def create_sets(imgs):
     low = []
     width, height = imgs[0].size
     for img in imgs:
-        raw_res = np.array(img).reshape(width,height,1)/255
-        low_res = np.array(img.resize((int(width/2),int(height/2))).resize((width,height))).reshape(width,height,1)/255
+        raw_res = np.array(img).reshape(width,height,1)/256
+        low_res = np.array(img.resize((int(width/2),int(height/2))).resize((width,height))).reshape(width,height,1)/256
 
         raw.append(raw_res)
         low.append(low_res)
@@ -74,26 +74,26 @@ def CNN(input_size, x, stddev):
     Wzh = tf.Variable(tf.truncated_normal(shape=[3,3,2,32],stddev=stddev))
     
     Whh = tf.Variable(tf.truncated_normal(shape=[3,3,32,32],stddev=stddev))
-    bh = tf.Variable(tf.constant(0.1, shape=[32]))
+    #bh = tf.Variable(tf.constant(0.1, shape=[32]))
     
     Why = tf.Variable(tf.truncated_normal(shape=[3,3,32,1],stddev=stddev))
-    by = tf.Variable(tf.constant(0.1, shape=[1]))
+    #by = tf.Variable(tf.constant(0.1, shape=[1]))
 
     h0 = tf.zeros([input_size, 32, 32, 32])
 
     z0 = tf.concat([x,x], axis=3)
-    h1 = tf.nn.relu(tf.nn.conv2d(h0, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z0, Wzh, strides=[1,1,1,1], padding='SAME') + bh)
-    y1 = tf.nn.relu(tf.nn.conv2d(h1, Why, strides=[1,1,1,1], padding='SAME') + by)
+    h1 = tf.nn.relu(tf.nn.conv2d(h0, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z0, Wzh, strides=[1,1,1,1], padding='SAME'))
+    y1 = tf.nn.relu(tf.nn.conv2d(h1, Why, strides=[1,1,1,1], padding='SAME'))
 
     z1 = tf.concat([x,y1], axis=3)
-    h2 = tf.nn.relu(tf.nn.conv2d(h1, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z1, Wzh, strides=[1,1,1,1], padding='SAME') + bh)
-    y2 = tf.nn.relu(tf.nn.conv2d(h2, Why, strides=[1,1,1,1], padding='SAME') + by)
+    h2 = tf.nn.relu(tf.nn.conv2d(h1, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z1, Wzh, strides=[1,1,1,1], padding='SAME'))
+    y2 = tf.nn.relu(tf.nn.conv2d(h2, Why, strides=[1,1,1,1], padding='SAME'))
 
     z2 = tf.concat([x,y2], axis=3)
-    h3 = tf.nn.relu(tf.nn.conv2d(h2, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z2, Wzh, strides=[1,1,1,1], padding='SAME') + bh)
-    y3 = tf.clip_by_value(tf.nn.relu(tf.nn.conv2d(h3, Why, strides=[1,1,1,1], padding='SAME') + by),0,1)
+    h3 = tf.nn.relu(tf.nn.conv2d(h2, Whh, strides=[1,1,1,1], padding='SAME') + tf.nn.conv2d(z2, Wzh, strides=[1,1,1,1], padding='SAME'))
+    y3 = tf.clip_by_value(tf.nn.relu(tf.nn.conv2d(h3, Why, strides=[1,1,1,1], padding='SAME')),0,1)
 
-    saver = tf.train.Saver([Wzh,Whh,bh,Why,by])
+    saver = tf.train.Saver([Wzh,Whh,Why])
 
     return y1, y2, y3, saver
 
@@ -108,7 +108,7 @@ def do_CNN(batch_size, stddev, sets, ratio, width, height):
     y1, y2, y3, saver = CNN(input_size, x, 5e-2)
     loss = tf.reduce_mean(tf.squared_difference(y, y1) + tf.squared_difference(y, y2) + tf.squared_difference(y, y3))
     train = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
-    
+
     psnr = tf.reduce_mean(tf.image.psnr(y, y3, max_val=1.0))
 
     tf.summary.image("image_hypo", y3, max_outputs=5)
@@ -126,10 +126,10 @@ def do_CNN(batch_size, stddev, sets, ratio, width, height):
             train_raw, test_raw = div_sets(batch_size, ratio, sets)
             train_x, train_y = create_sets(random_crop(train_raw, width, height))
 
-            if i%100 == 0:
+            if i%100 == 99:
                 test_x, test_y = create_sets(random_crop(test_raw, width, height))
                 psnr_, loss_, summary = sess.run([psnr, loss, merge], feed_dict={x: test_x, y: test_y, input_size: len(test_x)})
-                print("Epoch : %4d, psnr : %.4fdB, loss : %.4f" %(i, psnr_, loss_))
+                print("Epoch : %4d, psnr : %.4fdB, loss : %.4f" %(i+1, psnr_, loss_))
                 writer.add_summary(summary, global_step)
                 global_step+=1
                 saver.save(sess, 'RNNParams')
